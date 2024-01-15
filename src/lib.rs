@@ -25,8 +25,7 @@ impl State {
     async fn new(window: Window) -> Self {
         let size = window.inner_size();
 
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
+        // The instance is a handle to our GPU with all backends
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -67,21 +66,31 @@ impl State {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+        // Shader code assumes an SRGB surface texture. Using a different one
+        // will result all the colors coming out darker. If you want to support
+        // non SRGB surfaces, you'll need to account for that when drawing to
+        // the frame.
+        //
+        // See: https://github.com/three-rs/three/blob/07e47da5e0673aa9a16526719e16debd59040eec/src/color.rs#L39
         let surface_format = surface_caps
             .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+        let present_mode = surface_caps
+            .present_modes
+            .iter()
+            .copied()
+            .find(|f| matches!(f, wgpu::PresentMode::AutoNoVsync))
+            .unwrap_or(surface_caps.present_modes[0]);
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -130,18 +139,17 @@ impl State {
             });
 
         {
+            // BG colour, converted to sRGB from linear RGB for gamma correction
+            // Parallax purple
+            let [r, g, b] = [37.0, 39.0, 77.0].map(|x: f64| (x / 255f64).powf(2.2));
+
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -170,7 +178,10 @@ pub async fn run() {
     }
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("Umbral Engine")
+        .build(&event_loop)
+        .unwrap();
 
     #[cfg(target_arch = "wasm32")]
     {
