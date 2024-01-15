@@ -1,13 +1,24 @@
 use std::iter;
 
+use wgpu::Color;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
 
+use rand::Rng;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+fn random_srgb_colour() -> (f64, f64, f64) {
+    let mut rng = rand::thread_rng();
+    let r = rng.gen_range(0.0..1.0);
+    let g = rng.gen_range(0.0..1.0);
+    let b = rng.gen_range(0.0..1.0);
+    return (r, g, b);
+}
 
 struct State {
     surface: wgpu::Surface,
@@ -19,10 +30,12 @@ struct State {
     // it gets dropped after it as the surface contains
     // unsafe references to the window's resources.
     window: Window,
+    // bg colour
+    colour: wgpu::Color,
 }
 
 impl State {
-    async fn new(window: Window) -> Self {
+    async fn new(window: Window, colour: Color) -> Self {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU with all backends
@@ -103,6 +116,7 @@ impl State {
             config,
             size,
             window,
+            colour,
         }
     }
 
@@ -121,7 +135,17 @@ impl State {
 
     #[allow(unused_variables)]
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                ..
+            } => {
+                let (r, g, b) = random_srgb_colour();
+                self.colour = Color { r, g, b, a: 1.0 };
+                true
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self) {}
@@ -141,7 +165,7 @@ impl State {
         {
             // BG colour, converted to sRGB from linear RGB for gamma correction
             // Parallax purple
-            let [r, g, b] = [37.0, 39.0, 77.0].map(|x: f64| (x / 255f64).powf(2.2));
+            // let [r, g, b] = [37.0, 39.0, 77.0].map(|x: f64| (x / 255f64).powf(2.2));
 
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -149,7 +173,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(self.colour),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -202,8 +226,9 @@ pub async fn run() {
             .expect("Couldn't append canvas to document body.");
     }
 
+    let (r, g, b) = random_srgb_colour();
     // State::new uses async code, so we're going to wait for it to finish
-    let mut state = State::new(window).await;
+    let mut state = State::new(window, Color { r, g, b, a: 1.0 }).await;
 
     event_loop.run(move |event, _, control_flow| {
         match event {
